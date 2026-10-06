@@ -337,6 +337,243 @@ Would you like a step-by-step layout of which jumper wires go where for the Ultr
 
 <img width="1408" height="768" alt="image" src="https://github.com/user-attachments/assets/0e4b88cb-f85d-4ed8-9e33-1a2e9d1b0437" />
 
+Here is the dual-purpose diagram showing both the physical wiring illustration and the formal electronic schematic for your obstacle-avoiding robot car.  
 
+Key Wiring Notes to Cross-Reference with the Diagram
+Arduino Uno
+R$137.91($27.60)
+SunFounder
+The Shared Ground Link (Crucial): Notice how the black wire from the 4x AAA battery pack, the black wire from the 9V battery, the GND of the L298N, and the GND of the Arduino Uno all meet at a common connection point. Without this, the control pulses from Arduino pins 5, 6, 9, and 10 will have no return path and fail to trigger the motors.
+The Isolated Power Supply
+• The 4x AAA pack (6V) runs exclusively to the 12V/VMS power input input pin on the L298N terminal block to feed the high-current H-bridges.
+• The 9V battery connects cleanly into the Arduino's VIN or power jack, keeping the microcontroller's logic safe from motor-induced voltage drops.
+HC-SR04 Ultrasonic Sensor
+R$9.90
+Vida de Silício
+5.0
+(20)
+Sensor Power Supply: The VCC pin of the HC-SR04 Ultrasonic Sensor is safely connected to the 5V output pin on the Arduino, which is cleanly regulated by the onboard Arduino hardware.
+Now that you have the wiring blueprint and code ready, let me know:
+• Do you have all the necessary jumper wires (Male-to-Male or Male-to-Female) required to make these connections?
+• Do you want to review the exact order of assembly to safely test the motors before mounting the ultrasonic sensor?  
+
+> You forgot to create the electronic diagram
+
+My apologies for missing the formal engineering schematic in the last response.
+Here is the exact electronic circuit diagram using standard schematic symbols for your obstacle-avoidance robot. It maps precisely out how your independent power supplies isolate the inductive noise of the motors from your Arduino control logic.  
+
+```text
+       +9V Battery                    +6V (4x AAA Pack)
+           │                                 │
+     ┌─────┴─────┐                     ┌─────┴─────┐
+     │  ARDUINO  │                     │   L298N   │
+     │   UNO     │                     │ MOTOR VMS │
+     │           │                     └─────┬─────┘
+     │       5V  ├──────┐                    │
+     │       GND ├───┐  │                    │
+     │           │   │  │              ┌─────┴─────┐
+     │   TRIG 11 ├─┐ │  │              │  L298N    │
+     │   ECHO 12 ├┐│ │  │              │ H-BRIDGE  │
+     │           │││ │  │              │  DRIVER   │
+     │    PWM 5  ├┼┼─┼──┼──────────────┤ IN1       │
+     │    PWM 6  ├┼┼─┼──┼──────────────┤ IN2       │
+     │    PWM 9  ├┼┼─┼──┼──────────────┤ IN3       │
+     │    PWM 10 ├┼┼─┼──┼──────────────┤ IN4       │
+     └─────┬─────┘││ │  │              └──┬──┬──┬──┘
+           │      ││ │  │                 │  │  │  │
+          GND     ││ │  │    OUT1 ────────┘  │  │  └─── OUT4
+                  ││ │  │    OUT2 ───────────┘  └────── OUT3
+                  ││ │  │                       
+                  ││ │  │                       
+            ┌─────┴┴─┴──┴┐                ┌─────────┐   ┌─────────┐
+            │  HC-SR04   │                │  LEFT   │   │  RIGHT  │
+            │ ULTRASONIC │                │  MOTOR  │   │  MOTOR  │
+            │   SENSOR   │                └────┬────┘   └────┬────┘
+            └────────────┘                     │             │
+                                          (Driven by    (Driven by
+                                           OUT1/OUT2)    OUT3/OUT4)
+                                                
+   ====================== COMMON GROUND BUS ======================
+   (Connect together: 9V Black, 4xAAA Black, Arduino GND, L298N GND)
+```
+Circuit Symbol Breakdowns & Flow
+• The Microcontroller Node: The Arduino Uno behaves strictly as the signal logic generator. Its inputs (ECHO) and outputs (TRIG, IN1-IN4) run via low-current logic lines.
+• The High-Power Bus: The 6V battery rail handles the bulk currents. It links directly into the internal power collector pins of the L298N Dual H-Bridge switches, entirely isolating your Arduino's internal tracks from motor kickback.
+• The Common Ground Loop: Notice the bottom terminal bus. In standard engineering blueprints, all independent loops share a standardized zero-volt potential reference (GND). This single tie-line prevents floating voltage offsets from scrambling the logic outputs sent to the L298N input registers.
+Would you like help translating this blueprint into a breadboard-ready physical layout mapping, or are you ready to jump into calibrating the code's turn delays so the car steers away correctly when it encounters a wall?  
+
+> Now provide a good Arduino Uno sketch code to make the car avoid all obstacles automatically. Define functions whenever possible (good readability and code conciseness.
+
+Here is an optimized, highly readable, and modular Arduino sketch designed specifically for your 2WD obstacle-avoidance car.
+This code separates the hardware actions into descriptive, dedicated functions. This modular approach makes the code concise, easy to read, and easy to modify later when you want to add your line tracker sensor.  
+
+```cpp
+// ==========================================
+// PIN DEFINITIONS
+// ==========================================
+// Left Motor Control Pins (L298N)
+const int PIN_IN1 = 5;  // Left Motor Forward (PWM capable)
+const int PIN_IN2 = 6;  // Left Motor Backward (PWM capable)
+
+// Right Motor Control Pins (L298N)
+const int PIN_IN3 = 9;  // Right Motor Forward (PWM capable)
+const int PIN_IN4 = 10; // Right Motor Backward (PWM capable)
+
+// HC-SR04 Ultrasonic Sensor Pins
+const int PIN_TRIG = 11;
+const int PIN_ECHO = 12;
+
+// ==========================================
+// CONFIGURABLE PARAMETERS
+// ==========================================
+const int DISTANCE_THRESHOLD = 25; // Distance in cm to trigger avoidance
+const int MOTOR_SPEED        = 180; // Default drive speed (0 - 255)
+const int TURN_SPEED         = 200; // Speed used during sharp pivots (0 - 255)
+
+// ==========================================
+// ARDUINO CORE FUNCTIONS
+// ==========================================
+void setup() {
+  // Initialize Motor Control Pins as Outputs
+  pinMode(PIN_IN1, OUTPUT);
+  pinMode(PIN_IN2, OUTPUT);
+  pinMode(PIN_IN3, OUTPUT);
+  pinMode(PIN_IN4, OUTPUT);
+
+  // Initialize Ultrasonic Sensor Pins
+  pinMode(PIN_TRIG, OUTPUT);
+  pinMode(PIN_ECHO, INPUT);
+  
+  // Begin Serial Communication for debugging
+  Serial.begin(9600);
+}
+
+void loop() {
+  int currentDistance = getDistanceCM();
+  
+  // Debug output to check sensor health via Serial Monitor
+  Serial.print("Clearance ahead: ");
+  Serial.print(currentDistance);
+  Serial.println(" cm");
+
+  // Obstacle Avoidance Logic Engine
+  if (currentDistance > 0 && currentDistance < DISTANCE_THRESHOLD) {
+    executeAvoidanceManeuver();
+  } else {
+    moveForward(MOTOR_SPEED);
+  }
+  
+  delay(50); // Short stabilization delay between sensor pings
+}
+
+// ==========================================
+// SENSOR MODULE FUNCTIONS
+// ==========================================
+int getDistanceCM() {
+  // Clear the trigger pin to ensure a clean signal
+  digitalWrite(PIN_TRIG, LOW);
+  delayMicroseconds(2);
+  
+  // Send a sharp 10-microsecond HIGH burst
+  digitalWrite(PIN_TRIG, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(PIN_TRIG, LOW);
+  
+  // Read travel duration of the echo wave (30ms timeout prevents freezing)
+  long travelTimeDuration = pulseIn(PIN_ECHO, HIGH, 30000); 
+  
+  if (travelTimeDuration == 0) {
+    return 999; // Return safe out-of-range value if sensor misfires
+  }
+  
+  // Math: (Time * Speed of Sound 0.0343 cm/us) / 2 ways travel distance
+  return travelTimeDuration * 0.0343 / 2;
+}
+
+// ==========================================
+// MACRO MANEUVER BEHAVIORS
+// ==========================================
+void executeAvoidanceManeuver() {
+  stopMotors();
+  delay(200);
+  
+  moveBackward(MOTOR_SPEED);
+  delay(400); // Back away from the wall safely
+  
+  stopMotors();
+  delay(200);
+  
+  turnRight(TURN_SPEED);
+  delay(500); // Pivot away (Adjust this delay to dial in a ~90 degree turn)
+  
+  stopMotors();
+  delay(200);
+}
+
+// ==========================================
+// LOW-LEVEL ACTUATOR (H-BRIDGE) FUNCTIONS
+// ==========================================
+void moveForward(int speed) {
+  analogWrite(PIN_IN1, speed);
+  analogWrite(PIN_IN2, 0);
+  analogWrite(PIN_IN3, speed);
+  analogWrite(PIN_IN4, 0);
+}
+
+void moveBackward(int speed) {
+  analogWrite(PIN_IN1, 0);
+  analogWrite(PIN_IN2, speed);
+  analogWrite(PIN_IN3, 0);
+  analogWrite(PIN_IN4, speed);
+}
+
+void turnRight(int speed) {
+  // Spin on a dime: Left wheel moves forward, Right wheel reverses backward
+  analogWrite(PIN_IN1, speed);
+  analogWrite(PIN_IN2, 0);
+  analogWrite(PIN_IN3, 0);
+  analogWrite(PIN_IN4, speed);
+}
+
+void stopMotors() {
+  // Dynamic braking configuration (Pulls inputs down to sink coil field currents)
+  analogWrite(PIN_IN1, 0);
+  analogWrite(PIN_IN2, 0);
+  analogWrite(PIN_IN3, 0);
+  analogWrite(PIN_IN4, 0);
+}
+```
+Clean Code Architecture Highlights
+• Parameterization: Global variables like DISTANCE_THRESHOLD and MOTOR_SPEED are declared neatly at the top of the script. This lets you calibrate how close the car gets to a wall or how fast it moves by changing a single number, without digging into the logic below.
+• Timeout Shielding: The function pulseIn(PIN_ECHO, HIGH, 30000) explicitly implements a 30ms timeout cutoff. If the ultrasonic signal fires out into an empty room and never bounces back, the Arduino won't freeze up waiting for an echo that isn't coming.
+• State Braking: The stopMotors() function is executed between transitions (e.g., stopping before switching from backward to a right turn). This allows the inductive mechanical momentum of the gearboxes to dissipate smoothly, reducing stress on your H-bridge chips.
+When you upload this code and place the car on the ground, you can begin final calibrations. Let me know if you run into any of the following common hardware tweaks:
+• Does one of your motors spin backwards when the car is supposed to go straight? (This is a simple fix handled by swapping two wires or flipping a line of code).
+• Does the car turn exactly 90 degrees, or do we need to adjust the turn delay time to match the grip of your tires?
+• Are you ready to see how we will integrate your line tracker sensor inside this loop later on?  
+
+> In which pin of the Arduino should the (9V batary should be connect?
+
+To power the Arduino Uno safely using a 9V battery, you must connect the wires to the VIN and GND pins on the board, or use the circular black power jack.
+Do not connect a 9V battery to the 5V pin, as this will instantly destroy the microcontroller.
+Here are your two best options for connecting it:  
+
+Option 1: Using the Pin Headers (Recommended for bare wires)
+If you have a 9V battery clip with loose wire leads, plug them directly into the power rails on the edge of the Arduino:
+• Positive (Red Wire): Connect directly to the VIN (Voltage In) pin.
+• Negative (Black Wire): Connect directly to any of the GND (Ground) pins.
+The VIN pin passes the 9V battery power through the Arduino's built-in onboard voltage regulator, safely stepping it down to the clean 5V the internal processor needs.
+
+Option 2: Using the Power Barrel Jack (Safest and easiest)
+If your 9V battery clip features a round, black barrel connector plug, simply plug it directly into the black plastic Power Barrel Jack located right next to the silver USB port.
+This is the safest method because it physically prevents you from accidentally switching the positive and negative wires around.  
+
+⚠️ A Final Check Before Turning It On
+Before hooking up the power, double-check that you have completed the Common Ground Connection discussed during our schematic layout:
+1. Connect the 9V battery negative (Black) wire to an Arduino GND pin.
+2. Connect the 4x AAA battery pack negative (Black) wire to the L298N GND terminal.
+3. Run a jumper wire directly from that same L298N GND terminal to a second GND pin on your Arduino.
+Without this single jumper wire tying the grounds together, the Arduino's digital logic signals won't have a reference point, and your car will not move.
+Are you using a loose-wire battery clip or a barrel jack connector for your 9V battery? If you are ready, we can walk through how to safely turn on the system step-by-step so the car doesn't instantly zoom off your table during testing!
 
 
