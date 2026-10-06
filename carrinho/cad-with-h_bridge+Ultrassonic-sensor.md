@@ -333,6 +333,9 @@ L298N GND Terminal	Arduino GND Pin	Crucial Jump Wire! Ties both power systems to
 L298N 5V Terminal	Arduino 5V Pin	Leave Disconnected! (Since you are using a 9V battery for the Arduino).
 Would you like a step-by-step layout of which jumper wires go where for the Ultrasonic sensor pins (Trig, Echo, VCC, GND) to connect them safely to your newly separated power rails?  
 
+> Create an image illustrating all connections, and also create a circuit diagram (electronic symbols) for the same project.
+
+<img width="1408" height="768" alt="image" src="https://github.com/user-attachments/assets/0e4b88cb-f85d-4ed8-9e33-1a2e9d1b0437" />
 
 
 
