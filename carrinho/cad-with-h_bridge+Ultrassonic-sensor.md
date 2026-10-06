@@ -97,3 +97,243 @@ Most kits like this are paired with the ubiquitous L298N Dual H-Bridge Module.
                +----------------------+
 
 ```
+3. Basic Arduino C++ Implementation
+To make your 2-wheel car move, you need to write code that sets the digital states of the H-bridge logic pins (IN1 through IN4). By utilizing PWM-enabled pins on your Arduino (indicated by a ~ symbol), you can control the speed using analogWrite().
+Here is a ready-to-test Arduino sketch configured for a standard L298N module:
+```cpp
+// Left Motor Pins
+const int IN1 = 5; // PWM pin for Left Motor Direction
+const int IN2 = 6; // PWM pin for Left Motor Direction
+
+// Right Motor Pins
+const int IN3 = 9;  // PWM pin for Right Motor Direction
+const int IN4 = 10; // PWM pin for Right Motor Direction
+
+void setup() {
+  // Configure all motor control pins as outputs
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+}
+
+void loop() {
+  moveForward(200); // Move forward at ~80% speed (0-255 scale)
+  delay(2000);      // Drive for 2 seconds
+
+  stopMotors();
+  delay(500);       // Pause briefly
+
+  turnLeft(180);    // Spin left
+  delay(1000);      // Spin for 1 second
+
+  stopMotors();
+  delay(500);       
+}
+
+// ---- DIFFERENTIAL STEERING FUNCTIONS ----
+
+void moveForward(int motorSpeed) {
+  // Left motor forward (IN1 High, IN2 Low)
+  analogWrite(IN1, motorSpeed);
+  analogWrite(IN2, 0);
+  
+  // Right motor forward (IN3 High, IN4 Low)
+  analogWrite(IN3, motorSpeed);
+  analogWrite(IN4, 0);
+}
+
+void turnLeft(int motorSpeed) {
+  // To turn left sharply, reverse left wheel and push right wheel forward
+  analogWrite(IN1, 0);
+  analogWrite(IN2, motorSpeed);
+  
+  analogWrite(IN3, motorSpeed);
+  analogWrite(IN4, 0);
+}
+
+void stopMotors() {
+  // Active Braking: Pull all inputs LOW to short-circuit the motors gently
+  analogWrite(IN1, 0);
+  analogWrite(IN2, 0);
+  analogWrite(IN3, 0);
+  analogWrite(IN4, 0);
+}
+```
+To ensure everything connects safely without frying your components, could you tell me:
+• Which exact motor driver did you receive with your kit? (Is it a red board with a large black heatsink like the L298N, or a different shield?)
+• What batteries are you planning to use to power the motors?
+• Are you planning to add any autonomy features next, like an ultrasonic distance sensor or line tracking sensor?  
+
+> 1. I received 1 L298N 
+2. 4 AAA Bateries support (6V total)
+3. 1 ultrassonic Distance sensor and 1 line tracker sensor.
+
+But my first project will use only the ultrassonic distance sensor to make the car avoid obstacles automatically  
+
+That is an excellent foundation for an autonomous robot! By utilizing the L298N module with your 6V power source and the ultrasonic sensor, you can create an autonomous obstacle-avoidance robot.
+However, there is a critical electrical detail regarding your power supply that we must analyze first to prevent your car from stalling or randomly resetting.  
+
+1. Critical Electrical Analysis: The 6V Power Bottleneck  
+The L298N is built using older BJT (Bipolar Junction Transistor) technology. Because of this, it suffers from an internal voltage drop of about 1.5V to 2V.
+• The Math: If your 4x AAA batteries supply exactly 6V, the L298N will drop that down, leaving only 4V to 4.5V actually reaching your yellow gearmotors.
+• The Impact: While the motors will still spin at 4V, they will run significantly slower and have much less torque. If your car is driving on a thick carpet, it might struggle to move or stall completely.
+• The Arduino Supply Solution: The L298N has an onboard 5V regulator, but it requires at least 7V of input power to work reliably. Therefore, you should power your Arduino separately (e.g., using a 9V battery or a power bank plugged into the USB port) and use the 4x AAA battery pack only for the L298N motor inputs.
+Note: Make sure to connect the Ground (GND) pin of the L298N directly to a GND pin on the Arduino. Without a shared common ground, the control signals will fluctuate wildly, and the car will behave erratically.
+
+2. Physical Layout & Sensing Principle
+The ultrasonic distance sensor (usually an HC-SR04) acts as the eyes of your car.
+• Trigger Pin (Output): The Arduino sends a short 10-microsecond pulse to this pin. The sensor responds by emitting an ultrasonic sound burst.
+• Echo Pin (Input): The sensor listens for the sound bounce. The pin stays "HIGH" for the exact duration it took the sound wave to travel to the obstacle and bounce back.
+• The Obstacle Logic: The Arduino measures this time, calculates the distance in centimeters, and evaluates: If distance < 20cm -> Stop and Turn; Else -> Keep Moving Forward.
+
+3. Complete Obstacle-Avoiding Circuit Code
+Here is a fully integrated Arduino C++ code configured for your L298N and HC-SR04 ultrasonic sensor.
+```cpp
+// --- L298N Motor Driver Pins ---
+const int IN1 = 5;  // Left Motor Direction
+const int IN2 = 6;  // Left Motor Direction
+const int IN3 = 9;  // Right Motor Direction
+const int IN4 = 10; // Right Motor Direction
+
+// --- HC-SR04 Ultrasonic Sensor Pins ---
+const int TRIG_PIN = 11;
+const int ECHO_PIN = 12;
+
+// --- Threshold Settings ---
+const int DISTANCE_THRESHOLD = 20; // Distance in centimeters to trigger an avoidance maneuver
+
+void setup() {
+  // Initialize Motor Pins
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+
+  // Initialize Sensor Pins
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  
+  Serial.begin(9600); // For debugging via Serial Monitor
+}
+
+void loop() {
+  int distance = readDistance();
+  
+  Serial.print("Distance: ");
+  Serial.concat(distance);
+  Serial.println(" cm");
+
+  if (distance > 0 && distance < DISTANCE_THRESHOLD) {
+    // Obstacle detected! Execute avoidance maneuver
+    stopMotors();
+    delay(300);
+    
+    moveBackward(180); // Back up slightly to clear space
+    delay(500);
+    
+    stopMotors();
+    delay(200);
+    
+    turnRight(200);    // Spin right to find an open path
+    delay(600); 
+    
+    stopMotors();
+    delay(200);
+  } else {
+    // Path is clear, drive forward safely
+    moveForward(200); 
+  }
+  
+  delay(60); // Small buffer delay between ultrasonic pings
+}
+
+// --- ULTRASONIC SENSOR FUNCTION ---
+int readDistance() {
+  // Clear the trigger pin
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  
+  // Send a 10-microsecond HIGH pulse
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  
+  // Read the bounce time in microseconds
+  long duration = pulseIn(ECHO_PIN, HIGH, 30000); // 30ms timeout max
+  
+  if (duration == 0) return 999; // Return a safe large distance if sensor misfires
+  
+  // Calculate distance: (Speed of sound is 343m/s or 0.0343 cm/us)
+  // Distance = (Time * 0.0343) / 2  (divided by 2 because sound travels there and back)
+  return duration * 0.0343 / 2;
+}
+
+// --- MOVEMENT CONTROLS ---
+void moveForward(int speed) {
+  analogWrite(IN1, speed);
+  analogWrite(IN2, 0);
+  analogWrite(IN3, speed);
+  analogWrite(IN4, 0);
+}
+
+void moveBackward(int speed) {
+  analogWrite(IN1, 0);
+  analogWrite(IN2, speed);
+  analogWrite(IN3, 0);
+  analogWrite(IN4, speed);
+}
+
+void turnRight(int speed) {
+  analogWrite(IN1, speed);
+  analogWrite(IN2, 0);
+  analogWrite(IN3, 0);
+  analogWrite(IN4, speed); // Reverses right wheel to pivot sharply
+}
+
+void stopMotors() {
+  analogWrite(IN1, 0);
+  analogWrite(IN2, 0);
+  analogWrite(IN3, 0);
+  analogWrite(IN4, 0);
+}
+```
+To ensure the wiring goes smoothly:
+• Do you know how to perform the common ground connection between your battery pack, the L298N, and the Arduino?
+• How are you planning to physically mount the ultrasonic sensor to the front of your car (e.g., a static fixed mount, or do you have a mini servo motor to make it look left and right)?  
+
+> So, I will use 9V batery to provide all necessary energy. (Arduino Uno Board, the dual H-bridge, the ultrasonic distance sensor)
+
+Using a standard alkaline 9V battery (the rectangular kind) to power this entire setup is one of the most common mistakes in beginner robotics—and it will unfortunately cause your project to fail or constantly crash.
+While it seems ideal because it has a high voltage (9V), an alkaline 9V battery is designed for low-drain devices like smoke alarms. It can only continuously provide around 100mA to 300mA of current. Your two DC motors alone will demand 400mA to over 1000mA (1A) when trying to start moving.
+If you hook everything up to a single 9V battery, the voltage will instantly "sag" (drop) down to 3–4V under the load of the motors. This will immediately starve the Arduino, causing it to constantly reset every single time the motors try to spin, making your car glitch and twitch in place.  
+
+The Recommended Power Strategy
+To make your car work reliably, you must separate your logic power from your motor power. Luckily, you already have the perfect components to do this.  
+```text
+  [4x AAA Battery Pack (6V)] -------> Power for Motors Only (L298N VMS Pin)
+                                               |
+                                        [SHARED GND] <--- Connect all black wires here!
+                                               |
+  [9V Battery OR USB Power] ----------> Power for Brains Only (Arduino Vin Pin)
+```
+1. Power the Motors with the 4x AAA Pack (6V): Connect this pack directly to the VMS (Power) and GND terminals of your L298N driver. It can deliver the high current spikes your motors need without disrupting the Arduino.
+2. Power the Arduino with the 9V Battery: Connect the 9V battery to the Arduino's barrel jack or the VIN and GND pins. The Arduino will run perfectly and have clean, unpolluted power to read your ultrasonic sensor accurately.
+3. The Golden Rule — Tie the Grounds: You must connect a wire from the L298N's GND terminal directly to one of the Arduino's GND pins. If you don't share a common ground reference, the Arduino's control signals won't work, and the car will spin uncontrollably or do nothing at all.
+
+
+How to Wire It Safely
+Follow this exact wiring scheme to prevent any damaged components:
+Component From	Component To	Description
+4x AAA Positive (+)	L298N 12V / VMS Terminal	Supplies high-current power dedicated to the wheels.
+4x AAA Negative (-)	L298N GND Terminal	Motor power ground.
+9V Battery Positive (+)	Arduino VIN Pin (or Barrel Jack)	Supplies stable logic power to the microcontroller.
+9V Battery Negative (-)	Arduino GND Pin	Arduino power ground.
+L298N GND Terminal	Arduino GND Pin	Crucial Jump Wire! Ties both power systems together.
+L298N 5V Terminal	Arduino 5V Pin	Leave Disconnected! (Since you are using a 9V battery for the Arduino).
+Would you like a step-by-step layout of which jumper wires go where for the Ultrasonic sensor pins (Trig, Echo, VCC, GND) to connect them safely to your newly separated power rails?  
+
+
+
+
+
