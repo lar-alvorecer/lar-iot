@@ -1511,7 +1511,7 @@ Once your motors are spinning the right way, would you like to review how to cal
 > Create an electronic component diagram, showing all connections
 
 The comprehensive electronic wiring diagram for your robot car details all critical connections. It implements a two-tier isolated power distribution layout, splitting high-current motor pathways from sensitive sensor lines to guarantee the Arduino never resets mid-operation.
-![connection images](/carrinho/car-electronic-diagrams.jpeg)
+![connection images](/carrinho/image_7b7742a6.jpg)
 
 
 1. Master Interconnection Mapping Matrix
