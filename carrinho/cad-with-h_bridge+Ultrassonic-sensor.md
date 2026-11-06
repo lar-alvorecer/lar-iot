@@ -1427,7 +1427,160 @@ Connect the two wires coming out of your yellow plastic gearmotors to the green 
 Now that the wiring layout is set, would you like me to show you how to test your motors individually to make sure they are spinning forward instead of backward before running the main autonomous code?
 
 
+> yes
 
+Here is a short, dedicated Motor Calibration Sketch. Running this script will spin each motor forward one at a time for 2 seconds so you can verify that your wiring match your physical layout before running the full autonomous code.
+
+The Calibration Sketch
+
+cpp
+// ============================================================================
+// ARDUINO SMART CAR: INDIVIDUAL MOTOR DIRECTION TEST
+// Use this code to verify OUT1/OUT2 (Left) and OUT3/OUT4 (Right) polarities.
+// ============================================================================
+
+const int IN1 = 5; 
+const int IN2 = 6; 
+const int IN3 = 9;  
+const int IN4 = 10; 
+
+void setup() {
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+  
+  Serial.begin(9600);
+  Serial.println("--- Motor Direction Test Initiating ---");
+}
+
+void loop() {
+  // --------------------------------------------------------------------------
+  // TEST 1: LEFT MOTOR FORWARD
+  // --------------------------------------------------------------------------
+  Serial.println("Testing LEFT Motor: Should spin FORWARD...");
+  analogWrite(IN1, 150); // Moderate speed
+  analogWrite(IN2, 0);
+  analogWrite(IN3, 0);
+  analogWrite(IN4, 0);
+  delay(2000); // Spin for 2 seconds
+
+  // Brake
+  allStop();
+  delay(1000);
+
+  // --------------------------------------------------------------------------
+  // TEST 2: RIGHT MOTOR FORWARD
+  // --------------------------------------------------------------------------
+  Serial.println("Testing RIGHT Motor: Should spin FORWARD...");
+  analogWrite(IN1, 0);
+  analogWrite(IN2, 0);
+  analogWrite(IN3, 150);
+  analogWrite(IN4, 0);
+  delay(2000); // Spin for 2 seconds
+
+  // Brake and wait before repeating cycle
+  allStop();
+  Serial.println("Test cycle complete. Restarting in 3 seconds...\n");
+  delay(3000);
+}
+
+void allStop() {
+  analogWrite(IN1, 0);
+  analogWrite(IN2, 0);
+  analogWrite(IN3, 0);
+  analogWrite(IN4, 0);
+}
+Use code with caution.
+
+How to Read the Test Results & Fix Miswiring
+
+When you upload this code, prop the car chassis up on a small box or cup so the wheels can spin freely in the air without driving off your desk. Watch the wheels carefully:
+1. If a wheel spins BACKWARD instead of FORWARD:
+	• Do not change the Arduino code.
+	• Simply unscrew the two motor wires for that specific wheel from the green L298N terminal block (OUT1/OUT2 for Left, or OUT3/OUT4 for Right), swap their physical positions, and screw them back in.
+2. If the wrong side spins:
+	• If the text says "Testing LEFT Motor" but your physical right wheel spins, your motor pairs are swapped.
+	• Move the left motor wires over to OUT3/OUT4 and the right motor wires over to OUT1/OUT2.
+Once both wheels spin toward the front caster wheel during their respective 2-second windows, your wiring matches the physical logic of your autonomous main script perfectly.
+Once your motors are spinning the right way, would you like to review how to calibrate the sensitivity trim pots on your IR line sensors so they don't lose track of your black tape line?
+                        
+---  
+
+
+> Create an electronic component diagram, showing all connections
+
+The comprehensive electronic wiring diagram for your robot car details all critical connections. It implements a two-tier isolated power distribution layout, splitting high-current motor pathways from sensitive sensor lines to guarantee the Arduino never resets mid-operation.
+
+
+
+1. Master Interconnection Mapping Matrix
+
+
+Source Component	Pin Out	Destination Component	Pin In	Wire Function / Electrical Properties
+Power & Ground Rails				
+Battery Pack (7.4V/6V)	(+) POS	L298N Module	12V Screw Input	Direct raw voltage supply to H-bridge high-side transistors.
+Battery Pack (7.4V/6V)	(-) NEG	L298N Module	GND Screw Input	System reference common ground pathway.
+L298N Module	GND	Arduino Uno	GND Pin	Mandatory Ground Bridge stabilizes all signal logic.
+L298N Module	5V Output	Arduino Uno	5V Power Pin	Feeds clean, regulated 5V power from the L298N buck converter.
+Arduino Uno	5V Pin	Mini-Breadboard / Splice	(+) VCC Rail	Distribution point supplying logic power to front sensors.
+Arduino Uno	GND Pin	Mini-Breadboard / Splice	(-) GND Rail	Distribution point supplying ground reference to front sensors.
+H-Bridge Logic Control				
+Arduino Uno	Pin 5 (PWM)	L298N Module	IN1	Left Motor H-Bridge input vector (Speed/Direction Control).
+Arduino Uno	Pin 6 (PWM)	L298N Module	IN2	Left Motor H-Bridge input vector (Speed/Direction Control).
+Arduino Uno	Pin 9 (PWM)	L298N Module	IN3	Right Motor H-Bridge input vector (Speed/Direction Control).
+Arduino Uno	Pin 10 (PWM)	L298N Module	IN4	Right Motor H-Bridge input vector (Speed/Direction Control).
+Front Obstacle Array				
+Breadboard Rail	(+) 5V	HC-SR04 Sensor	VCC	Core operational power for ultrasonic sonic transducer.
+Breadboard Rail	(-) GND	HC-SR04 Sensor	GND	Sensor return ground reference path.
+Arduino Uno	Pin 11	HC-SR04 Sensor	Trig	Triggers the 10-microsecond high frequency sonic ping.
+Arduino Uno	Pin 12	HC-SR04 Sensor	Echo	Delivers pulse width proportional to object clear distance.
+Front Line Array				
+Breadboard Rail	(+) 5V	Left IR Module	VCC	Operational 5V source for infrared emitter and photodiode.
+Breadboard Rail	(-) GND	Left IR Module	GND	Sensor return ground reference path.
+Arduino Uno	Pin 2	Left IR Module	OUT	Digital Logic Output signal (HIGH/LOW track reading).
+Breadboard Rail	(+) 5V	Right IR Module	VCC	Operational 5V source for infrared emitter and photodiode.
+Breadboard Rail	(-) GND	Right IR Module	GND	Sensor return ground reference path.
+Arduino Uno	Pin 3	Right IR Module	OUT	Digital Logic Output signal (HIGH/LOW track reading).
+DC Load Outputs				
+L298N Screw Port	OUT1	Left TT Gearmotor	Terminal A	Left Motor positive polarity driver leg.
+L298N Screw Port	OUT2	Left TT Gearmotor	Terminal B	Left Motor negative polarity driver leg.
+L298N Screw Port	OUT3	Right TT Gearmotor	Terminal A	Right Motor positive polarity driver leg.
+L298N Screw Port	OUT4	Right TT Gearmotor	Terminal B	Right Motor negative polarity driver leg.
+
+
+2. High-Current Isolation Architecture
+
+text
+  [ BATTERY PACK (6V - 7.4V) ] 
+
+       |                  |
+   (+) |                  | (-)
+       v                  v
+  [ L298N 12V IN ]   [ L298N GND ] <==========+  (COMMON GROUND BUS)
+
+       |                  |                   |
+       | [Onboard Reg]    +-------------------|---------+
+       v                                      |         |
+  [ L298N 5V OUT ]                            |         |
+
+       |                                      |         |
+       v                                      v         v
+  [ ARDUINO 5V PIN ] <---------------- [ ARDUINO GND ]  |
+
+       |                                                |
+       +===> [ VCC RAIL ] (Sensors Only)                |
+
+       |                                                |
+       +===> [ GND RAIL ] (Sensors Only) ===============+
+Use code with caution.
+
+3. Electrical Isolation Rules
+
+• The L298N 5V Regulator Jumper: Ensure the small black plastic onboard 5V regulator jumper is kept inserted on your L298N driver board. This allows the L298N module to step down the motor battery voltage to clean 5V power, safely feeding the Arduino's 5V input pin.
+• Never Power Motors from Arduino: Do not attempt to bridge the Arduino's onboard voltage lines directly to the OUT1-OUT4 terminals. Doing so bypasses the H-bridge completely and can trigger an overcurrent condition that destroys your microcontroller's traces.
+Do you need help checking if your battery pack provides enough voltage to run both the L298N driver chip and the motors efficiently?
+                        
 
 
 
